@@ -26,18 +26,22 @@ abs_builddir = @abs_builddir@
 top_builddir = @top_builddir@
 top_srcdir:= @top_srcdir@
 
-ECC_SOURCES:= ecc.c testecc.c testfield.c test_helper.c
-ECC_HEADERS:= ecc.h test_helper.h
-FILES:=Makefile.in Makefile.contiki $(ECC_SOURCES) $(ECC_HEADERS) 
+
+ECC_SOURCES:= ecc.c uECC.c test/test_compute.c test/test_ecdh.c test/test_compress.c test/test_ecdsa.c
+ECC_HEADERS:= ecc.h uECC.h types.h uECC_vli.h platform-specific.inc curve-specific.inc \
+                asm_arm.inc asm_arm_mult_square.inc asm_arm_mult_square_umaal.inc \
+                asm_avr.inc asm_avr_mult_square.inc
+
+FILES:=Makefile.in Makefile.contiki $(ECC_SOURCES) $(ECC_HEADERS)
 DISTDIR=$(top_builddir)/@PACKAGE_TARNAME@-@PACKAGE_VERSION@
 
 ifeq ("@WITH_CONTIKI@", "1")
 include Makefile.contiki
 else
-ECC_OBJECTS:= $(patsubst %.c, %.o, $(ECC_SOURCES)) ecc_test.o
-PROGRAMS:= testecc testfield
+ECC_OBJECTS:= $(patsubst %.c, %.o, $(ECC_SOURCES))
+PROGRAMS:= test_compress test_compute test_ecdh test_ecdsa
 CPPFLAGS=@CPPFLAGS@
-CFLAGS=-Wall -std=c99 -pedantic @CFLAGS@ -DTEST_INCLUDE
+CFLAGS=-Wall -std=c99 @CFLAGS@ -DTEST_INCLUDE
 LDLIBS=@LIBS@
 
 .PHONY: all dirs clean install distclean .gitignore doc
@@ -47,19 +51,18 @@ LDLIBS=@LIBS@
 
 all: $(PROGRAMS)
 
-ecc_test.o:	ecc.c ecc.h
-	$(CC) $(CFLAGS) $(CPPFLAGS)  -c -o $@ $<
+$(PROGRAMS):: uECC.o
+	$(CC) $(CFLAGS) $(CPPFLAGS) -I./ $^ test/$(@F).c -o $(@F)
 
-testecc: ecc_test.o test_helper.o
-
-testfield: ecc_test.o test_helper.o
+uECC.o: uECC.c uECC.h *.inc
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c uECC.c -o uECC.o
 
 check:	
 	echo DISTDIR: $(DISTDIR)
 	echo top_builddir: $(top_builddir)
 
 clean:
-	@rm -f $(PROGRAMS) main.o $(LIB) $(OBJECTS)
+	@rm -f $(PROGRAMS) *.o $(LIB) $(OBJECTS)
 	for dir in $(SUBDIRS); do \
 		$(MAKE) -C $$dir clean ; \
 	done

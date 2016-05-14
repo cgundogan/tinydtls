@@ -330,25 +330,6 @@ dtls_psk_pre_master_secret(unsigned char *key, size_t keylen,
 #endif /* DTLS_PSK */
 
 #ifdef DTLS_ECC
-static void dtls_ec_key_to_uint32(const unsigned char *key, size_t key_size,
-				  uint32_t *result) {
-  int i;
-
-  for (i = (key_size / sizeof(uint32_t)) - 1; i >= 0 ; i--) {
-    *result = dtls_uint32_to_int(&key[i * sizeof(uint32_t)]);
-    result++;
-  }
-}
-
-static void dtls_ec_key_from_uint32(const uint32_t *key, size_t key_size,
-				    unsigned char *result) {
-  int i;
-
-  for (i = (key_size / sizeof(uint32_t)) - 1; i >= 0 ; i--) {
-    dtls_int_to_uint32(result, key[i]);
-    result += 4;
-  }
-}
 
 int dtls_ec_key_from_uint32_asn1(const uint32_t *key, size_t key_size,
 				 unsigned char *buf) {
@@ -392,23 +373,20 @@ int dtls_ecdh_pre_master_secret(unsigned char *priv_key,
                                    size_t key_size,
                                    unsigned char *result,
                                    size_t result_len) {
-  uint32_t priv[8];
-  uint32_t pub_x[8];
-  uint32_t pub_y[8];
-  uint32_t result_x[8];
-  uint32_t result_y[8];
+
+  uint8_t publicKey[64];
+  uint8_t privateKey[32];
 
   if (result_len < key_size) {
     return -1;
   }
 
-  dtls_ec_key_to_uint32(priv_key, key_size, priv);
-  dtls_ec_key_to_uint32(pub_key_x, key_size, pub_x);
-  dtls_ec_key_to_uint32(pub_key_y, key_size, pub_y);
 
-  ecc_ecdh(pub_x, pub_y, priv, result_x, result_y);
+  memcpy(publicKey, pub_key_x, 32);
+  memcpy(publicKey + 32, pub_key_y, 32);
+  memcpy(privateKey, priv_key, 32);
+  uECC_shared_secret(publicKey, privateKey, result);
 
-  dtls_ec_key_from_uint32(result_x, key_size, result);
   return key_size;
 }
 
@@ -417,19 +395,15 @@ dtls_ecdsa_generate_key(unsigned char *priv_key,
 			unsigned char *pub_key_x,
 			unsigned char *pub_key_y,
 			size_t key_size) {
-  uint32_t priv[8];
-  uint32_t pub_x[8];
-  uint32_t pub_y[8];
 
-  do {
-    dtls_prng((unsigned char *)priv, key_size);
-  } while (!ecc_is_valid_key(priv));
+  uint8_t publicKey[64];
+  uint8_t privateKey[32];
 
-  ecc_gen_pub_key(priv, pub_x, pub_y);
+  uECC_make_key(publicKey, privateKey);
+  memcpy(pub_key_x, publicKey, 32);
+  memcpy(pub_key_y, publicKey + 32, 32);
+  memcpy(priv_key, privateKey, 32);
 
-  dtls_ec_key_from_uint32(priv, key_size, priv_key);
-  dtls_ec_key_from_uint32(pub_x, key_size, pub_key_x);
-  dtls_ec_key_from_uint32(pub_y, key_size, pub_key_y);
 }
 
 /* rfc4492#section-5.4 */
@@ -438,16 +412,15 @@ dtls_ecdsa_create_sig_hash(const unsigned char *priv_key, size_t key_size,
 			   const unsigned char *sign_hash, size_t sign_hash_size,
 			   uint32_t point_r[9], uint32_t point_s[9]) {
   int ret;
-  uint32_t priv[8];
-  uint32_t hash[8];
-  uint32_t rand[8];
-  
-  dtls_ec_key_to_uint32(priv_key, key_size, priv);
-  dtls_ec_key_to_uint32(sign_hash, sign_hash_size, hash);
-  do {
-    dtls_prng((unsigned char *)rand, key_size);
-    ret = ecc_ecdsa_sign(priv, hash, rand, point_r, point_s);
-  } while (ret);
+
+  uint8_t privateKey[32];
+  uint8_t hashValue[32];
+  uint8_t sign[64];
+
+
+  uECC_sign(privateKey, hashValue, sign);
+  memcpy(point_r, sign, 32);
+  memcpy(point_s, sign + 32, 32);
 }
 
 void
@@ -475,19 +448,14 @@ dtls_ecdsa_verify_sig_hash(const unsigned char *pub_key_x,
 			   const unsigned char *pub_key_y, size_t key_size,
 			   const unsigned char *sign_hash, size_t sign_hash_size,
 			   unsigned char *result_r, unsigned char *result_s) {
-  uint32_t pub_x[8];
-  uint32_t pub_y[8];
-  uint32_t hash[8];
-  uint32_t point_r[8];
-  uint32_t point_s[8];
 
-  dtls_ec_key_to_uint32(pub_key_x, key_size, pub_x);
-  dtls_ec_key_to_uint32(pub_key_y, key_size, pub_y);
-  dtls_ec_key_to_uint32(result_r, key_size, point_r);
-  dtls_ec_key_to_uint32(result_s, key_size, point_s);
-  dtls_ec_key_to_uint32(sign_hash, sign_hash_size, hash);
+  uint8_t publicKey[64];
+  uint8_t hashValue[32];
+  uint8_t sign[64];
 
-  return ecc_ecdsa_validate(pub_x, pub_y, hash, point_r, point_s);
+  memcpy(publicKey, pub_key_x, 32);
+  memcpy(publicKey + 32, pub_key_y, 32);
+  return uECC_verify(publicKey, hashValue, sign);
 }
 
 int
