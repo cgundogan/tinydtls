@@ -28,6 +28,7 @@
 #include "numeric.h"
 #include "hmac.h"
 #include "ccm.h"
+#include "ecc/ecc.h"
 
 /* TLS_PSK_WITH_AES_128_CCM_8 */
 #define DTLS_MAC_KEY_LENGTH    0
