@@ -1,86 +1,235 @@
-/*
- * Copyright (c) 2009 Chris K Cockrum <ckc@cockrum.net>
+/*******************************************************************************
  *
- * Copyright (c) 2013 Jens Trillmann <jtrillma@tzi.de>
- * Copyright (c) 2013 Marc Müller-Weinhardt <muewei@tzi.de>
- * Copyright (c) 2013 Lars Schmertmann <lars@tzi.de>
- * Copyright (c) 2013 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (c) 2015, 2016 Olaf Bergmann (TZI) and others.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
+ * and the Eclipse Distribution License is available at 
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
- *
- * This implementation is based in part on the paper Implementation of an
- * Elliptic Curve Cryptosystem on an 8-bit Microcontroller [0] by
- * Chris K Cockrum <ckc@cockrum.net>.
- *
- * [0]: http://cockrum.net/Implementation_of_ECC_on_an_8-bit_microcontroller.pdf
- *
- * This is a efficient ECC implementation on the secp256r1 curve for 32 Bit CPU
- * architectures. It provides basic operations on the secp256r1 curve and support
- * for ECDH and ECDSA.
- */
-#include <inttypes.h>
+ *******************************************************************************/
 
-#define keyLengthInBytes 32
-#define arrayLength 8
+#ifndef _ECC_H_
+#define _ECC_H_
 
-extern const uint32_t ecc_g_point_x[8];
-extern const uint32_t ecc_g_point_y[8];
-
-//ec Functions
-void ecc_ec_mult(const uint32_t *px, const uint32_t *py, const uint32_t *secret, uint32_t *resultx, uint32_t *resulty);
-
-static inline void ecc_ecdh(const uint32_t *px, const uint32_t *py, const uint32_t *secret, uint32_t *resultx, uint32_t *resulty) {
-	ecc_ec_mult(px, py, secret, resultx, resulty);
-}
-int ecc_ecdsa_validate(const uint32_t *x, const uint32_t *y, const uint32_t *e, const uint32_t *r, const uint32_t *s);
-int ecc_ecdsa_sign(const uint32_t *d, const uint32_t *e, const uint32_t *k, uint32_t *r, uint32_t *s);
-
-int ecc_is_valid_key(const uint32_t * priv_key);
-static inline void ecc_gen_pub_key(const uint32_t *priv_key, uint32_t *pub_x, uint32_t *pub_y)
+#ifdef __cplusplus
+extern "C"
 {
-	ecc_ec_mult(ecc_g_point_x, ecc_g_point_y, priv_key, pub_x, pub_y);
-}
+#endif
 
-#ifdef TEST_INCLUDE
-//ec Functions
-void ecc_ec_add(const uint32_t *px, const uint32_t *py, const uint32_t *qx, const uint32_t *qy, uint32_t *Sx, uint32_t *Sy);
-void ecc_ec_double(const uint32_t *px, const uint32_t *py, uint32_t *Dx, uint32_t *Dy);
+#include <stdint.h>
 
-//simple Functions for addition and substraction of big numbers
-uint32_t ecc_add( const uint32_t *x, const uint32_t *y, uint32_t *result, uint8_t length);
-uint32_t ecc_sub( const uint32_t *x, const uint32_t *y, uint32_t *result, uint8_t length);
+/*
+ * DTLS_CRYPTO_HAL
+ */
 
-//field functions for big numbers
-int ecc_fieldAdd(const uint32_t *x, const uint32_t *y, const uint32_t *reducer, uint32_t *result);
-int ecc_fieldSub(const uint32_t *x, const uint32_t *y, const uint32_t *modulus, uint32_t *result);
-int ecc_fieldMult(const uint32_t *x, const uint32_t *y, uint32_t *result, uint8_t length);
-void ecc_fieldModP(uint32_t *A, const uint32_t *B);
-void ecc_fieldModO(const uint32_t *A, uint32_t *result, uint8_t length);
-void ecc_fieldInv(const uint32_t *A, const uint32_t *modulus, const uint32_t *reducer, uint32_t *B);
+struct dtls_ec_curve_t;
+typedef const struct dtls_ec_eurve_t * dtls_ec_curve;
 
-//simple functions to work with the big numbers
-void ecc_copy(const uint32_t *from, uint32_t *to, uint8_t length);
-int ecc_isSame(const uint32_t *A, const uint32_t *B, uint8_t length);
-void ecc_setZero(uint32_t *A, const int length);
-int ecc_isOne(const uint32_t* A);
-void ecc_rshift(uint32_t* A);
-int ecc_isGreater(const uint32_t *A, const uint32_t *B, uint8_t length);
+/**
+* Call this function to create a unique public-private key pair in secure hardware
+*
+* @param[out] p_publicKey  The public key that is associated with the private key that was just created.
+* @param[out] p_privateKeyHandle  A handle that is used to point to the private key stored in hardware.
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_make_key_Function)(uint8_t p_publicKey[], uint8_t p_privateKeyHandle[], dtls_ec_curve curve);
 
-#endif /* TEST_INCLUDE */
+/**
+* Set the callback function that will be used to generate a public-private key pair.
+* This function will replace uECC_make_key.
+*
+* @param[in] p_make_key_cb  The function that will be used to generate a public-private key pair.
+*/
+void dtls_ec_set_make_key_cb(dtls_ec_make_key_Function p_make_key_cb);
+
+/**
+* Call this function to sign a hash using a hardware protected private key.
+*
+* @param[in] p_privateKeyHandle  A handle that is used to point to the private key stored in hardware.
+* @param[in] p_hash  The hash to sign.
+* @param[out] p_signature  The signature that is produced in hardware by the private key..
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_sign_Function)(uint8_t p_privateKeyHandle[], const uint8_t p_hash[], unsigned p_hash_size, uint8_t p_signature[], dtls_ec_curve p_curve);
+
+/**
+* Set the callback function that will be used to sign.
+* This function will replace uECC_sign.
+*
+* @param[in] p_sign_cb  The function that will be used to sign.
+*/
+void dtls_ec_set_sign_cb(dtls_ec_sign_Function p_sign_cb);
+
+/**
+* Call this function to verify a signature using the public key and hash that was signed. 
+*
+* @param[in] p_publicKey  The public key that is associated with the private key that produced the signature.
+* @param[in] p_hash  The hash that was signed.
+* @param[in] p_signature  The signature that was produced the private key that is associated with p_public_key
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_verify_Function)(const uint8_t p_publicKey[], const uint8_t p_hash[], unsigned p_hash_size, const uint8_t *p_signature, dtls_ec_curve p_curve);
+
+/**
+* Set the callback function that will be used to verify.
+* This function will replace uECC_verify.
+*
+* @param[in] p_verify_cb  The function that will be used to verify.
+*/
+void dtls_ec_set_verify_cb(dtls_ec_verify_Function p_verify_cb);
+
+/**
+* Call this function to produce an ECDH shared key using the public key of the other node.
+* A hardware protected private key will be used for the point multiply
+*
+* @param[in] p_publicKey  The public key from the other node used for communication.
+* @param[in] p_privateKeyHandle  A handle that is used to point to the private key stored in hardware.
+* @param[out] p_secret  The pre-master key that is produced by the point multiply with p_public_key and our private key
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_shared_secret_Function)(const uint8_t p_publicKey[], const uint8_t p_privateKeyHandle[], uint8_t p_secret[], dtls_ec_curve curve);
+
+/**
+* Set the callback function that will be used to produce a shared secret.
+* This function will replace uECC_shared_secret.
+*
+* @param[in] p_make_key_cb  The function that will be used to generate the shared secret.
+*/
+void dtls_ec_set_shared_secret_cb(dtls_ec_shared_secret_Function p_shared_secret_cb);
+
+/**
+* Call this function to produce a shared key using the public key of the other node.
+* An ephemeral private key will be created in secure hardware that will be used for the point multiply
+*
+* @param[in] p_public_key  The public key from the other node used for communication.
+* @param[out] p_public_key_out  The ephemeral public key that will be used in the point multiply.
+* @param[out] p_secret  The pre-master key that is produced by the point multiply with p_public_key and our private key
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_ecdhe_Function)(const uint8_t p_public_key_in[],
+                                      uint8_t p_public_key_out[],
+                                      uint8_t p_secret[]);
+
+/**
+* Set the callback function that will be used to produce a ECDHE shared secret.
+*
+* @param[in] p_ecdhe_cb  The function that will be used to generate the ECDHE shared secret.
+*/
+void dtls_ec_set_ecdhe_cb(dtls_ec_ecdhe_Function p_ecdhe_cb);
+
+/**
+* Call this function to return the public key for an existing private key.
+*
+* @param[out] p_key_handle  A handle that is used to point to the private key stored in hardware.
+*    The public key that is associated with this private key will be returned
+* @param[out] p_public_key  The public key that is associated with the private key that was just created.
+* @return 1 upon success, 0 if an error occurred.
+*/
+typedef int (*dtls_ec_get_pubkey_Function)(const uint8_t p_key_handle[],
+                                           uint8_t p_public_key[]);
+
+/**
+* Set the callback function that will be used to return the public key for an existing private key.
+*
+* @param[in] p_get_pubkey_cb  The function that will be used to return the public key for an existing private key.
+*/
+void dtls_ec_set_get_pubkey_cb(dtls_ec_get_pubkey_Function p_get_pubkey_cb);
+
+
+/**
+* Call this function to produce a shared key using the public key of the other node.
+* An ephemeral private key will be created that will be used for the point multiply
+*
+* @param[in] p_public_key  The public key from the other node used for communication.
+* @param[out] p_public_key_out  The ephemeral public key that will be used in the point multiply.
+* @param[out] p_secret  The pre-master key that is produced by the point multiply with p_public_key and our private key
+* @return 1 upon success, 0 if an error occurred.
+*/
+int dtls_ec_ecdhe(const uint8_t p_public_key_in[],
+                  uint8_t p_public_key_out[],
+                  uint8_t p_secret[]);
+
+/**
+* Call this function to return the public key for an existing private key.
+*
+* @param[out] p_key_handle  A handle that is used to point to the private key stored in hardware.
+*    The public key that is associated with this private key will be returned
+* @param[out] p_public_key  The public key that is associated with the private key that was just created.
+* @return 1 upon success, 0 if an error occurred.
+*/
+int dtls_ec_get_pubkey(const uint8_t p_key_handle[], uint8_t p_public_key[]);
+
+/**
+ * Document me...
+ *
+ * @param p_publicKey
+ * @param p_privateKey
+ * @param p_curve
+ * @return
+ */
+int dtls_ec_make_key(uint8_t p_publicKey[], uint8_t p_privateKey[], dtls_ec_curve p_curve);
+
+/**
+ * Document me...
+ *
+ * @param p_publicKey
+ * @param p_privateKey
+ * @param p_secret
+ * @param curve
+ * @return
+ */
+int dtls_ec_shared_secret(const uint8_t p_publicKey[], const uint8_t p_privateKey[], uint8_t p_secret[], dtls_ec_curve curve);
+
+/**
+ * Document me...
+ *
+ * @param p_privateKey
+ * @param p_hash
+ * @param p_hash_size
+ * @param p_signature
+ * @param p_curve
+ * @return
+ */
+int dtls_ec_sign(const uint8_t p_privateKey[], const uint8_t p_hash[], unsigned p_hash_size, uint8_t *p_signature, dtls_ec_curve p_curve);
+
+/**
+ * Document me...
+ *
+ * @param p_publicKey
+ * @param p_hash
+ * @param p_hash_size
+ * @param p_signature
+ * @param p_curve
+ * @return
+ */
+int dtls_ec_verify(const uint8_t p_publicKey[], const uint8_t p_hash[], unsigned p_hash_size, const uint8_t *p_signature, dtls_ec_curve p_curve);
+
+/**
+ * Document me...
+ *
+ * @param p_public_key_in
+ * @param p_public_key_out
+ * @param p_secret
+ * @return
+ */
+int dtls_ec_ecdhe(const uint8_t p_public_key_in[], uint8_t p_public_key_out[], uint8_t p_secret[]);
+
+/**
+ * Document me...
+ *
+ * @param p_key_handle
+ * @param p_public_key
+ * @return
+ */
+int dtls_ec_get_pubkey(const uint8_t p_key_handle[], uint8_t p_public_key[]);
+
+//////////////////////////////////////////
+
+#ifdef __cplusplus
+} /* end of extern "C" */
+#endif
+ 
+#endif /* _ECC_H_ */

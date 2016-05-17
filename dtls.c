@@ -1764,8 +1764,7 @@ check_client_certificate_verify(dtls_context_t *ctx,
 			    sizeof(config->keyx.ecdsa.other_pub_x),
 			    sha256hash, sizeof(sha256hash),
 			    result_r, result_s);
-
-  if (ret < 0) {
+  if (ret <= 0) {
     dtls_alert("wrong signature err: %i\n", ret);
     return dtls_alert_fatal_create(DTLS_ALERT_HANDSHAKE_FAILURE);
   }
@@ -2710,7 +2709,7 @@ check_server_key_exchange_ecdsa(dtls_context_t *ctx,
 			    1 + 2 + 1 + 1 + (2 * DTLS_EC_KEY_SIZE),
 			    result_r, result_s);
 
-  if (ret < 0) {
+  if (ret <= 0) {
     dtls_alert("wrong signature\n");
     return dtls_alert_fatal_create(DTLS_ALERT_HANDSHAKE_FAILURE);
   }
