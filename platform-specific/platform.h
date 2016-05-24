@@ -52,6 +52,10 @@
 #  include "platform-specific/config-wismote.h"
 #endif /* CONTIKI_TARGET_WISMOTE */
 
+#ifdef CONTIKI_TARGET_Z1
+#  include "platform-specific/config-z1.h"
+#endif /* CONTIKI_TARGET_WISMOTE */
+
 #ifdef CONTIKI_TARGET_SKY
 #  include "platform-specific/config-sky.h"
 #endif /* CONTIKI_TARGET_SKY */
@@ -60,6 +64,11 @@
 #  include "platform-specific/config-minimal-net.h"
 #endif /* CONTIKI_TARGET_MINIMAL_NET */
 
+#ifdef CONTIKI_TARGET_EXP5438
+#  include "platform-specific/config-exp5438.h"
+#endif
+
+/*RAFS TODO: Insert Native here for giving assert.h to it */
 #endif /* CONTIKI */
 
 #endif /* _PLATFORM_H_ */
