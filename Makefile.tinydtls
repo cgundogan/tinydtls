@@ -20,7 +20,7 @@ ifeq ($(TARGET), minimal-net)
 CFLAGS += -DSHA2_USE_INTTYPES_H=1
 endif
 
-CFLAGS += -DDTLSv12 -DWITH_SHA256 
+CFLAGS += -DDTLSv12 -DWITH_SHA256
 tinydtls_src = dtls.c crypto.c hmac.c rijndael.c sha2.c ccm.c netq.c ecc.c dtls_time.c peer.c session.c
 
 # This activates debugging support
