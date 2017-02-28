@@ -1,0 +1,7 @@
+Verified+1: Hudson CI
+Code-Review+2: Olaf Bergmann <bergmann@tzi.org>
+Submitted-by: Olaf Bergmann <bergmann@tzi.org>
+Submitted-at: Tue, 28 Feb 2017 07:10:44 -0500
+Reviewed-on: https://git.eclipse.org/r/85388
+Project: tinydtls/org.eclipse.tinydtls
+Branch: refs/heads/master
