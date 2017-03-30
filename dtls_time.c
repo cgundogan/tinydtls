@@ -1,18 +1,27 @@
-/*******************************************************************************
+/* dtls -- a very basic DTLS implementation
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2011--2013 Olaf Bergmann <bergmann@tzi.org>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
  *
- *******************************************************************************/
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 /**
  * @file dtls_time.c
@@ -20,8 +29,10 @@
  */
 
 #include "tinydtls.h"
+#include "dtls_config.h"
 #include "dtls_time.h"
 
+#if defined(WITH_CONTIKI) || defined(WITH_OCF)
 #ifdef WITH_CONTIKI
 clock_time_t dtls_clock_offset;
 
@@ -37,6 +48,20 @@ dtls_ticks(dtls_tick_t *t) {
 }
 
 #else /* WITH_CONTIKI */
+clock_time_t dtls_clock_offset;
+
+void
+dtls_clock_init(void) {
+  oc_clock_init();
+  dtls_clock_offset = oc_clock_time();
+}
+
+void
+dtls_ticks(dtls_tick_t *t) {
+  *t = oc_clock_time();
+}
+#endif /* WITH_OCF */
+#else /* WITH_CONTIKI || WITH_OCF */
 
 time_t dtls_clock_offset;
 
@@ -65,6 +90,6 @@ void dtls_ticks(dtls_tick_t *t) {
 #endif
 }
 
-#endif /* WITH_CONTIKI */
+#endif /* !(WITH_CONTIKI || WITH_OCF) */
 
 

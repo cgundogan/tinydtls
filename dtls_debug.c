@@ -1,21 +1,30 @@
-/*******************************************************************************
+/* debug.c -- debug utilities
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2011--2012 Olaf Bergmann <bergmann@tzi.org>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
- *    Hauke Mehrtens - memory optimization, ECC integration
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
  *
- *******************************************************************************/
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #include "tinydtls.h"
+#include "dtls_config.h"
 
 #if defined(HAVE_ASSERT_H) && !defined(assert)
 #include <assert.h>
@@ -32,12 +41,12 @@
 #include <time.h>
 #endif
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 #include "global.h"
 #include "dtls_debug.h"
-
-#ifndef min
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#endif
 
 static int maxlog = DTLS_LOG_WARN;	/* default maximum log level */
 
@@ -56,17 +65,25 @@ dtls_get_log_level() {
 
 void
 dtls_set_log_level(log_t level) {
-#ifdef NDEBUG
-  maxlog = min(level, DTLS_LOG_INFO);
-#else /* !NDEBUG */
   maxlog = level;
-#endif /* NDEBUG */
 }
 
 /* this array has the same order as the type log_t */
+#ifdef __ANDROID__
+static android_LogPriority loglevels_android[] = {
+  ANDROID_LOG_FATAL,
+  ANDROID_LOG_ERROR,
+  ANDROID_LOG_ERROR,
+  ANDROID_LOG_WARN,
+  ANDROID_LOG_INFO,
+  ANDROID_LOG_INFO,
+  ANDROID_LOG_DEBUG
+};
+#else
 static char *loglevels[] = {
   "EMRG", "ALRT", "CRIT", "WARN", "NOTE", "INFO", "DEBG" 
 };
+#endif
 
 #ifdef HAVE_TIME_H
 
@@ -78,7 +95,8 @@ print_timestamp(char *s, size_t len, time_t t) {
 }
 
 #else /* alternative implementation: just print the timestamp */
-
+//typedef oc_clock_time_t clock_time_t;
+//#define CLOCK_SECOND OC_CLOCK_SECOND
 static inline size_t
 print_timestamp(char *s, size_t len, clock_time_t t) {
 #ifdef HAVE_SNPRINTF
@@ -92,8 +110,6 @@ print_timestamp(char *s, size_t len, clock_time_t t) {
 }
 
 #endif /* HAVE_TIME_H */
-
-#ifndef NDEBUG
 
 /** 
  * A length-safe strlen() fake. 
@@ -111,11 +127,19 @@ dtls_strnlen(const char *s, size_t maxlen) {
   return n;
 }
 
+#ifndef min
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+
 static size_t
 dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
 #ifdef HAVE_ARPA_INET_H
   const void *addrptr = NULL;
+#ifdef __ANDROID__
+  unsigned short int port;
+#else
   in_port_t port;
+#endif
   char *p = buf;
 
   switch (addr->addr.sa.sa_family) {
@@ -161,7 +185,7 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
 #else /* HAVE_ARPA_INET_H */
 # if WITH_CONTIKI
   char *p = buf;
-#  if NETSTACK_CONF_WITH_IPV6
+#  ifdef UIP_CONF_IPV6
   uint8_t i;
   const char hex[] = "0123456789ABCDEF";
 
@@ -180,14 +204,12 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
     *p++ = hex[(addr->addr.u8[i+1] & 0x0f)];
   }
   *p++ = ']';
-#  else /* NETSTACK_CONF_IPV6 */
+#  else /* UIP_CONF_IPV6 */
+#   warning "IPv4 network addresses will not be included in debug output"
+
   if (len < 21)
     return 0;
-
-  p += sprintf(p, "%u.%u.%u.%u",
-               addr->addr.u8[0], addr->addr.u8[1],
-               addr->addr.u8[2], addr->addr.u8[3]);
-#  endif /* NETSTACK_CONF_IPV6 */
+#  endif /* UIP_CONF_IPV6 */
   if (buf + len - p < 6)
     return 0;
 
@@ -202,16 +224,26 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
 #endif
 }
 
-#endif /* NDEBUG */
+#ifdef __ANDROID__
+void
+dsrv_log(log_t level, char *format, ...) {
+  va_list ap;
 
-#ifndef WITH_CONTIKI
+  if (maxlog < level)
+    return;
+
+  va_start(ap, format);
+  __android_log_vprint(loglevels_android[level], PACKAGE_NAME, format, ap);
+  va_end(ap);
+}
+#elif !defined (WITH_CONTIKI) && !defined (WITH_OCF)
 void 
 dsrv_log(log_t level, char *format, ...) {
   static char timebuf[32];
   va_list ap;
   FILE *log_fd;
 
-  if (maxlog < (int)level)
+  if (maxlog < level)
     return;
 
   log_fd = level <= DTLS_LOG_CRIT ? stderr : stdout;
@@ -286,14 +318,48 @@ void dtls_dsrv_log_addr(log_t level, const char *name, const session_t *addr)
   dsrv_log(level, "%s: %s\n", name, addrbuf);
 }
 
-#ifndef WITH_CONTIKI
+#ifdef __ANDROID__
+void
+dtls_dsrv_hexdump_log(log_t level, const char *name, const unsigned char *buf, size_t length, int extend) {
+  char *hex_dump_text;
+  char *p;
+  int ret;
+  int size;
+
+  if (maxlog < level)
+    return;
+
+  size = length * 3 + strlen(name) + 22;
+  hex_dump_text = malloc(size);
+  if (!hex_dump_text)
+    return;
+
+  p = hex_dump_text;
+
+  ret = snprintf(p, size, "%s: (%zu bytes): ", name, length);
+  if (ret >= size)
+    goto print;
+  p += ret;
+  size -= ret;
+  while (length--) {
+    ret = snprintf(p, size, "%02X ", *buf++);
+    if (ret >= size)
+      goto print;
+    p += ret;
+    size -= ret;
+  }
+print:
+  __android_log_print(loglevels_android[level], PACKAGE_NAME, "%s\n", hex_dump_text);
+  free(hex_dump_text);
+}
+#elif !defined (WITH_CONTIKI)
 void 
 dtls_dsrv_hexdump_log(log_t level, const char *name, const unsigned char *buf, size_t length, int extend) {
   static char timebuf[32];
   FILE *log_fd;
   int n = 0;
 
-  if (maxlog < (int)level)
+  if (maxlog < level)
     return;
 
   log_fd = level <= DTLS_LOG_CRIT ? stderr : stdout;
@@ -346,7 +412,8 @@ dtls_dsrv_hexdump_log(log_t level, const char *name, const unsigned char *buf, s
     PRINTF("%s ", loglevels[level]);
 
   if (extend) {
-    PRINTF("%s: (%zu bytes):\n", name, length);
+//    PRINTF("%s: (%zu bytes):\n", name, length);
+    PRINTF("%s: (%d bytes):\n", name, length);
 
     while (length--) {
       if (n % 16 == 0)
@@ -363,7 +430,8 @@ dtls_dsrv_hexdump_log(log_t level, const char *name, const unsigned char *buf, s
       }
     }
   } else {
-    PRINTF("%s: (%zu bytes): ", name, length);
+//    PRINTF("%s: (%zu bytes): ", name, length);
+    PRINTF("%s: (%d bytes): ", name, length);
     while (length--) 
       PRINTF("%02X", *buf++);
   }

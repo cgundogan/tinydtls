@@ -46,7 +46,7 @@ extern "C" {
  * file.
  */
 #include <sys/types.h>
-#include "tinydtls.h"
+#include "dtls_config.h"
 
 #ifdef SHA2_USE_INTTYPES_H
 
@@ -93,6 +93,7 @@ typedef unsigned long long u_int64_t;	/* 8-bytes (64-bits) */
  *
  *   cc -DSHA2_USE_INTTYPES_H ...
  */
+
 #ifdef SHA2_USE_INTTYPES_H
 
 typedef struct _dtls_sha256_ctx {

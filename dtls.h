@@ -1,20 +1,28 @@
-/*******************************************************************************
+/* dtls -- a very basic DTLS implementation
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2011--2013 Olaf Bergmann <bergmann@tzi.org>
+ * Copyright (C) 2013 Hauke Mehrtens <hauke@hauke-m.de>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
- *    Hauke Mehrtens - memory optimization, ECC integration
- *    Achim Kraus    - session recovery
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
  *
- *******************************************************************************/
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 /**
  * @file dtls.h
@@ -31,10 +39,18 @@
 #include "state.h"
 #include "peer.h"
 
+#if !defined(WITH_CONTIKI) && !defined(WITH_OCF)
 #include "uthash.h"
+#include "t_list.h"
+#endif /* !WITH_CONTIKI && !WITH_OCF */
+
+#ifdef WITH_OCF
+#include "util/oc_etimer.h"
+#include "port/oc_log.h"
+#endif /* WITH_OCF */
 
 #include "alert.h"
-#include "crypto.h"
+#include "dtls_crypto.h"
 #include "hmac.h"
 
 #include "global.h"
@@ -46,16 +62,20 @@
 #define DTLS_VERSION 0xfefd	/* DTLS v1.2 */
 #endif
 
+#ifdef DTLS_X509
+#define DTLS_MAX_CERT_SIZE       1400
+#endif
+
 typedef enum dtls_credentials_type_t {
   DTLS_PSK_HINT, DTLS_PSK_IDENTITY, DTLS_PSK_KEY
 } dtls_credentials_type_t;
 
-typedef struct dtls_ecdsa_key_t {
+typedef struct dtls_ecc_key_t {
   dtls_ecdh_curve curve;
   const unsigned char *priv_key;	/** < private key as bytes > */
   const unsigned char *pub_key_x;	/** < x part of the public key for the given private key > */
   const unsigned char *pub_key_y;	/** < y part of the public key for the given private key > */
-} dtls_ecdsa_key_t;
+} dtls_ecc_key_t;
 
 /** Length of the secret that is used for generating Hello Verify cookies. */
 #define DTLS_COOKIE_SECRET_LENGTH 12
@@ -171,14 +191,15 @@ typedef struct {
    *                session.
    * @return @c 0 if result is set, or less than zero on error.
    */
-  int (*get_ecdsa_key)(struct dtls_context_t *ctx, 
+  int (*get_ecdsa_key)(struct dtls_context_t *ctx,
 		       const session_t *session,
-		       const dtls_ecdsa_key_t **result);
+		       const dtls_ecc_key_t **result);
+
 
   /**
    * Called during handshake to check the peer's pubic key in this
    * session. If the public key matches the session and should be
-   * considerated valid the return value must be @c 0. If not valid,
+   * considered valid the return value must be @c 0. If not valid,
    * the return value must be less than zero.
    *
    * If ECDSA should not be supported, set this pointer to NULL.
@@ -201,31 +222,146 @@ typedef struct {
    *   return dtls_alert_fatal_create(DTLS_ALERT_CERTIFICATE_UNKNOWN);
    *   return dtls_alert_fatal_create(DTLS_ALERT_UNKNOWN_CA);
    */
-  int (*verify_ecdsa_key)(struct dtls_context_t *ctx, 
+  int (*verify_ecdsa_key)(struct dtls_context_t *ctx,
 			  const session_t *session,
 			  const unsigned char *other_pub_x,
 			  const unsigned char *other_pub_y,
 			  size_t key_size);
 #endif /* DTLS_ECC */
-} dtls_handler_t;
+#ifdef DTLS_X509
+  /**
+   * Called during handshake to get the server's or client's ecdsa
+   * key used to authenticate this server or client in this
+   * session. If found, the key must be stored in @p result and
+   * the return value must be @c 0. If not found, @p result is
+   * undefined and the return value must be less than zero.
+   *
+   * If ECDSA should not be supported, set this pointer to NULL.
+   *
+   * Implement this if you want to provide your own certificate to
+   * the other peer. This is mandatory for a server providing X.509
+   * support and optional for a client. A client doing DTLS client
+   * authentication has to implementing this callback.
+   *
+   * @param ctx     The current dtls context.
+   * @param session The session where the key will be used.
+   * @param result  Must be set to the key object to used for the given
+   *                session.
+   * @return @c 0 if result is set, or less than zero on error.
+   */
+  int (*get_x509_key)(struct dtls_context_t *ctx,
+               const session_t *session,
+               const dtls_ecc_key_t **result);
+  /**
+   * Called during handshake to get the server's or client's
+   * certificate used to authenticate this server or client in this
+   * session. If found, the certificate must be stored in @p cert and
+   * the return value must be @c 0. If not found, @p cert is
+   * undefined and the return value must be less than zero.
+   *
+   * If X.509 should not be supported, set this pointer to NULL.
+   *
+   * Implement this if you want to provide your own certificate to
+   * the other peer. This is mandatory for a server providing X.509
+   * support and optional for a client. A client doing DTLS client
+   * authentication has to implementing this callback.
+   *
+   * @param ctx       The current dtls context.
+   * @param session   The session where the certificate will be used.
+   * @param cert      Must be set to the certificate object to used for
+   *                  the given session.
+   * @param cert_size Size of certificate in bytes.
+   * @return @c 0 if result is set, or less than zero on error.
+   */
+  int (*get_x509_cert)(struct dtls_context_t *ctx,
+			const session_t *session,
+			const unsigned char **cert,
+			size_t *cert_size);
 
-struct netq_t;
+  /**
+   * Called during handshake to check the peer's certificate in this
+   * session. If the certificate matches the session and is valid the
+   * return value must be @c 0. If not valid, the return value must be
+   * less than zero.
+   *
+   * If X.509 should not be supported, set this pointer to NULL.
+   *
+   * Implement this if you want to verify the other peers certificate.
+   * This is mandatory for a DTLS client doing based X.509
+   * authentication. A server implementing this will request the
+   * client to do DTLS client authentication.
+   *
+   * @param ctx       The current dtls context.
+   * @param session   The session where the key will be used.
+   * @param cert      Peer's certificate to check.
+   * @param cert_size Size of certificate in bytes.
+   * @param x         Allocated memory to store peer's public key part x.
+   * @param x_size    Size of allocated memory to store peer's public key part x.
+   * @param y         Allocated memory to store peer's public key part y.
+   * @param y_size    Size of allocated memory to store peer's public key part y.
+   * @return @c 0 if public key matches, or less than zero on error.
+   * error codes:
+   *   return dtls_alert_fatal_create(DTLS_ALERT_BAD_CERTIFICATE);
+   *   return dtls_alert_fatal_create(DTLS_ALERT_UNSUPPORTED_CERTIFICATE);
+   *   return dtls_alert_fatal_create(DTLS_ALERT_CERTIFICATE_REVOKED);
+   *   return dtls_alert_fatal_create(DTLS_ALERT_CERTIFICATE_EXPIRED);
+   *   return dtls_alert_fatal_create(DTLS_ALERT_CERTIFICATE_UNKNOWN);
+   *   return dtls_alert_fatal_create(DTLS_ALERT_UNKNOWN_CA);
+   */
+  int (*verify_x509_cert)(struct dtls_context_t *ctx,
+			   const session_t *session,
+			   const unsigned char *cert,
+			   size_t cert_size,
+               unsigned char *x,
+			   size_t x_size,
+               unsigned char *y,
+			   size_t y_size);
+
+  /**
+   * Called during handshake to check if certificate format should be X.509
+   *
+   * If X.509 should not be supported, set this pointer to NULL.
+   *
+   * @param ctx       The current dtls context.
+   * @return @c 0 if certificate format should be X.509, or less than zero on error.
+   */
+  int (*is_x509_active)(struct dtls_context_t *ctx);
+#endif /* DTLS_X509 */
+
+} dtls_handler_t;
 
 /** Holds global information of the DTLS engine. */
 typedef struct dtls_context_t {
   unsigned char cookie_secret[DTLS_COOKIE_SECRET_LENGTH];
   clock_time_t cookie_secret_age; /**< the time the secret has been generated */
 
+#if !defined(WITH_CONTIKI) && !defined(WITH_OCF)
   dtls_peer_t *peers;		/**< peer hash map */
+#else /* !WITH_CONTIKI && !WITH_OCF */
 #ifdef WITH_CONTIKI
-  struct etimer retransmit_timer; /**< fires when the next packet must be sent */
-#endif /* WITH_CONTIKI */
+  LIST_STRUCT(peers);
 
-  struct netq_t *sendqueue;     /**< the packets to send */
+  struct etimer retransmit_timer; /**< fires when the next packet must be sent */
+#else /* WITH_CONTIKI */
+  OC_LIST_STRUCT(peers);
+
+  struct oc_etimer retransmit_timer; /**< fires when the next packet must be sent */
+#endif /* WITH_OCF */
+#endif /* WITH_CONTIKI || WITH_OCF */
+
+#ifdef WITH_OCF
+  OC_LIST_STRUCT(sendqueue);	/**< the packets to send */
+#else /* WITH_OCF */
+  LIST_STRUCT(sendqueue);	/**< the packets to send */
+#endif /* !WITH_OCF */
 
   void *app;			/**< application-specific data */
 
   dtls_handler_t *h;		/**< callback handlers */
+
+  dtls_cipher_enable_t is_anon_ecdh_eabled;    /**< enable/disable the TLS_ECDH_anon_WITH_AES_128_CBC_SHA_256 */
+
+  dtls_cipher_t selected_cipher; /**< selected ciper suite for handshake */
 
   unsigned char readbuf[DTLS_MAX_BUF];
 } dtls_context_t;
@@ -234,7 +370,7 @@ typedef struct dtls_context_t {
  * This function initializes the tinyDTLS memory management and must
  * be called first.
  */
-void dtls_init(void);
+void dtls_init();
 
 /** 
  * Creates a new context object. The storage allocated for the new
@@ -251,6 +387,24 @@ void dtls_free_context(dtls_context_t *ctx);
 static inline void dtls_set_handler(dtls_context_t *ctx, dtls_handler_t *h) {
   ctx->h = h;
 }
+
+ /**
+  * @brief Enabling the TLS_ECDH_anon_WITH_AES_128_CBC_SHA_256
+  *
+  * @param ctx              The DTLS context to use.
+  * @param is_enable    DTLS_CIPHER_ENABLE(1) or DTLS_CIPHER_DISABLE(0)
+  */
+void dtls_enables_anon_ecdh(dtls_context_t* ctx, dtls_cipher_enable_t is_enable);
+
+/**
+ * @brief Select the cipher suite for handshake
+ *
+ * @param ctx              The DTLS context to use.
+ * @param cipher         TLS_ECDH_anon_WITH_AES_128_CBC_SHA_256 (0xC018)
+ *                                  TLS_PSK_WITH_AES_128_CCM_8 (0xX0A8)
+ *                                  TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 (0xC0AE)
+ */
+void dtls_select_cipher(dtls_context_t* ctx, const dtls_cipher_t cipher);
 
 /**
  * Establishes a DTLS channel with the specified remote peer @p dst.
@@ -405,12 +559,29 @@ dtls_peer_t *dtls_get_peer(const dtls_context_t *context,
 			   const session_t *session);
 
 /**
- * Resets all connections with @p peer.
- *
- * @param context  The active DTLS context.
- * @param peer     The peer to reset.
- */
-void dtls_reset_peer(dtls_context_t *context, dtls_peer_t *peer);
+* Invokes the DTLS PRF using the current key block for @p session as
+* key and @p label + @p random1 + @p random2 as its input. This function
+* writes upto @p buflen bytes into the given output buffer @p buf.
+*
+* @param ctx The dtls context to use.
+* @param session The session whose key shall be used.
+* @param label A PRF label.
+* @param labellen Actual length of @p label.
+* @param random1 Random seed.
+* @param random1len Actual length of @p random1 (may be zero).
+* @param random2 Random seed.
+* @param random2len Actual length of @p random2 (may be zero).
+* @param buf Output buffer for generated random data.
+* @param buflen Maximum size of @p buf.
+*
+* @return The actual number of bytes written to @p buf or @c 0 on error.
+*/
+size_t dtls_prf_with_current_keyblock(dtls_context_t *ctx, session_t *session,
+                                      const uint8_t* label, const uint32_t labellen,
+                                      const uint8_t* random1, const uint32_t random1len,
+                                      const uint8_t* random2, const uint32_t random2len,
+                                      uint8_t* buf, const uint32_t buflen);
+
 
 #endif /* _DTLS_DTLS_H_ */
 

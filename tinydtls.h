@@ -30,4 +30,21 @@
 #include "platform-specific/platform.h"
 #endif /* !CONTIKI */
 
+/** Defined to 1 if tinydtls is built with support for ECC */
+#define DTLS_ECC 1
+
+/** Defined to 1 if tinydtls is built with support for PSK */
+//#define DTLS_PSK 1
+
+/** Defined to 1 if tinydtls is built for Contiki OS */
+/* #undef WITH_CONTIKI */
+
+#define WITH_CONTIKI 1
+
+/** Define to 1 if building with X.509 support */
+/* #define DTLS_X509 0 */
+
+/** Define to 1 if building with Hardware Abstraction Layer */
+#define DTLS_CRYPTO_HAL 0
+
 #endif /* _DTLS_TINYDTLS_H_ */

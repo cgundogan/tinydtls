@@ -1,34 +1,26 @@
-/*******************************************************************************
+/* netq.h -- Simple packet queue
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2010--2012 Olaf Bergmann <bergmann@tzi.org>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
- *    Hauke Mehrtens - memory optimization, ECC integration
- *
- *******************************************************************************/
+ * This file is part of the library tinyDTLS. Please see the file
+ * LICENSE for terms of use.
+ */
 
 #include "dtls_debug.h"
 #include "netq.h"
-#include "utlist.h"
 
 #ifdef HAVE_ASSERT_H
 #include <assert.h>
 #else
 #ifndef assert
-#warning "assertions are disabled"
+//#warning "assertions are disabled"
 #  define assert(x)
 #endif
 #endif
 
-#ifndef WITH_CONTIKI
+#include "t_list.h"
+
+#if !defined(WITH_CONTIKI) && !defined(WITH_OCF)
 #include <stdlib.h>
 
 static inline netq_t *
@@ -41,7 +33,10 @@ netq_free_node(netq_t *node) {
   free(node);
 }
 
-#else /* WITH_CONTIKI */
+/* FIXME: implement Contiki's list functions using utlist.h */
+
+#else /* !WITH_CONTIKI && !WITH_OCF */
+#ifdef WITH_CONTIKI
 #include "memb.h"
 
 MEMB(netq_storage, netq_t, NETQ_MAXCNT);
@@ -60,34 +55,53 @@ void
 netq_init() {
   memb_init(&netq_storage);
 }
-#endif /* WITH_CONTIKI */
+#else /* WITH_CONTIKI */
+#include "util/oc_memb.h"
+
+OC_MEMB(netq_storage, netq_t, NETQ_MAXCNT);
+
+static inline netq_t *
+netq_malloc_node(size_t size) {
+  return (netq_t *)oc_memb_alloc(&netq_storage);
+}
+
+static inline void
+netq_free_node(netq_t *node) {
+  oc_memb_free(&netq_storage, node);
+}
+
+void
+netq_init() {
+  oc_memb_init(&netq_storage);
+}
+#endif /* WITH_OCF */
+#endif /* WITH_CONTIKI || WITH_OCF */
 
 int 
-netq_insert_node(netq_t **queue, netq_t *node) {
+netq_insert_node(list_t queue, netq_t *node) {
   netq_t *p;
 
   assert(queue);
   assert(node);
 
-  p = *queue;
-  while(p && p->t <= node->t) {
-    assert(p != node);
-    if (p == node)
-      return 0;
-    p = p->next;
-  }
+  p = (netq_t *)list_head(queue);
+  while(p && p->t <= node->t && list_item_next(p))
+    p = list_item_next(p);
 
   if (p)
-    LL_PREPEND_ELEM(*queue, p, node);
+    list_insert(queue, p, node);
   else
-    LL_APPEND(*queue, node);
+    list_push(queue, node);
 
   return 1;
 }
 
 netq_t *
-netq_head(netq_t **queue) {
-  return queue ? *queue : NULL;
+netq_head(list_t queue) {
+  if (!queue)
+    return NULL;
+
+  return list_head(queue);
 }
 
 netq_t *
@@ -95,24 +109,22 @@ netq_next(netq_t *p) {
   if (!p)
     return NULL;
 
-  return p->next;
+  return list_item_next(p);
 }
 
 void
-netq_remove(netq_t **queue, netq_t *p) {
+netq_remove(list_t queue, netq_t *p) {
   if (!queue || !p)
     return;
 
-  LL_DELETE(*queue, p);
+  list_remove(queue, p);
 }
 
-netq_t *netq_pop_first(netq_t **queue) {
-  netq_t *p = netq_head(queue);
-  
-  if (p)
-    LL_DELETE(*queue, p);
-  
-  return p;
+netq_t *netq_pop_first(list_t queue) {
+  if (!queue)
+    return NULL;
+
+  return list_pop(queue);
 }
 
 netq_t *
@@ -128,7 +140,7 @@ netq_node_new(size_t size) {
   if (node)
     memset(node, 0, sizeof(netq_t));
 
-  return node;
+  return node;  
 }
 
 void 
@@ -138,13 +150,11 @@ netq_node_free(netq_t *node) {
 }
 
 void 
-netq_delete_all(netq_t **queue) {
-  netq_t *p, *tmp;
+netq_delete_all(list_t queue) {
+  netq_t *p;
   if (queue) {
-    LL_FOREACH_SAFE(*queue,p,tmp) {
-      netq_free_node(p);
-    }
-
-    *queue = NULL;
+    while((p = list_pop(queue)))
+      netq_free_node(p); 
   }
 }
+
