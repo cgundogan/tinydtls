@@ -1,19 +1,27 @@
-/*******************************************************************************
+/* dtls -- a very basic DTLS implementation
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2011--2014 Olaf Bergmann <bergmann@tzi.org>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
- *    Hauke Mehrtens - memory optimization, ECC integration
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
  *
- *******************************************************************************/
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #ifndef _DTLS_GLOBAL_H_
 #define _DTLS_GLOBAL_H_
@@ -47,15 +55,18 @@ typedef unsigned char uint48[6];
     When Peers are sending bigger messages this causes problems. Californium
     with ECDSA needs at least 220 */
 #ifdef WITH_CONTIKI
-#ifdef DTLS_ECC
+#if defined(DTLS_ECC) || defined(DTLS_X509)
 #define DTLS_MAX_BUF 200
 #else /* DTLS_ECC */
 #define DTLS_MAX_BUF 100
-#endif /* DTLS_ECC */
-#else /* WITH_CONTIKI */
+#endif                  /* !DTLS_ECC */
+#elif defined(WITH_OCF) /* WITH_CONTIKI */
+#include <messaging/coap/coap.h>
+#define DTLS_MAX_BUF (2 * OC_BLOCK_SIZE)
+#else /* WITH_OCF */
 #define DTLS_MAX_BUF 1400
-#endif /* WITH_CONTIKI */
-#endif
+#endif /* !(WITH_CONTIKI || WITH_OCF) */
+#endif /* DTLS_MAX_BUF */
 
 #ifndef DTLS_DEFAULT_MAX_RETRANSMIT
 /** Number of message retransmissions. */
@@ -63,11 +74,18 @@ typedef unsigned char uint48[6];
 #endif
 
 /** Known cipher suites.*/
-typedef enum { 
+typedef enum {
   TLS_NULL_WITH_NULL_NULL = 0x0000,   /**< NULL cipher  */
+  TLS_ECDH_anon_WITH_AES_128_CBC_SHA_256 = 0xFF00, /**< OCF Vendor Specific Ciphersuite */
   TLS_PSK_WITH_AES_128_CCM_8 = 0xC0A8, /**< see RFC 6655 */
+  TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA_256 = 0xC037, /**< see RFC 5489 */
   TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 = 0xC0AE /**< see RFC 7251 */
 } dtls_cipher_t;
+
+typedef enum {
+    DTLS_CIPHER_DISABLE = 0,
+    DTLS_CIPHER_ENABLE = 1
+} dtls_cipher_enable_t;
 
 /** Known compression suites.*/
 typedef enum {
@@ -81,7 +99,10 @@ typedef enum {
 #define TLS_EXT_SERVER_CERTIFICATE_TYPE	20 /* see RFC 7250 */
 #define TLS_EXT_ENCRYPT_THEN_MAC	22 /* see RFC 7366 */
 
-#define TLS_CERT_TYPE_RAW_PUBLIC_KEY	2 /* see RFC 7250 */
+/* see http://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#tls-extensiontype-values-3 */
+#define TLS_CERT_TYPE_X509              0 /* see RFC 6091 */
+#define TLS_CERT_TYPE_RAW_PUBLIC_KEY    2 /* see RFC 7250 */
+
 
 #define TLS_EXT_ELLIPTIC_CURVES_SECP256R1	23 /* see RFC 4492 */
 
@@ -94,7 +115,7 @@ typedef enum {
 #define TLS_EXT_SIG_HASH_ALGO_SHA256		4 /* see RFC 5246 */
 #define TLS_EXT_SIG_HASH_ALGO_ECDSA		3 /* see RFC 5246 */
 
-/** 
+/**
  * XORs \p n bytes byte-by-byte starting at \p y to the memory area
  * starting at \p x. */
 static inline void
@@ -127,7 +148,7 @@ equals(unsigned char *a, unsigned char *b, size_t len) {
 #ifdef HAVE_FLS
 #define dtls_fls(i) fls(i)
 #else
-static inline int 
+static inline int
 dtls_fls(unsigned int i) {
   int n;
   for (n = 0; i; n++)
@@ -135,8 +156,5 @@ dtls_fls(unsigned int i) {
   return n;
 }
 #endif /* HAVE_FLS */
-
-#undef uthash_fatal
-#define uthash_fatal(msg) return(-1) /* fatal error in uthash */
 
 #endif /* _DTLS_GLOBAL_H_ */

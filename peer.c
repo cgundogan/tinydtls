@@ -1,31 +1,39 @@
-/*******************************************************************************
+/* dtls -- a very basic DTLS implementation
  *
- * Copyright (c) 2011, 2012, 2013, 2014, 2015 Olaf Bergmann (TZI) and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v1.0
- * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * Copyright (C) 2011--2013 Olaf Bergmann <bergmann@tzi.org>
  *
- * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php.
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * Contributors:
- *    Olaf Bergmann  - initial API and implementation
- *    Hauke Mehrtens - memory optimization, ECC integration
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
  *
- *******************************************************************************/
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #include "global.h"
 #include "peer.h"
 #include "dtls_debug.h"
 
-#ifndef WITH_CONTIKI
-void peer_init(void)
+#if !defined(WITH_CONTIKI) && !defined(WITH_OCF)
+void peer_init()
 {
 }
 
 static inline dtls_peer_t *
-dtls_malloc_peer(void) {
+dtls_malloc_peer() {
   return (dtls_peer_t *)malloc(sizeof(dtls_peer_t));
 }
 
@@ -36,18 +44,18 @@ dtls_free_peer(dtls_peer_t *peer) {
   dtls_security_free(peer->security_params[1]);
   free(peer);
 }
-#else /* WITH_CONTIKI */
-
+#else /* !WITH_CONTIKI && !WITH_OCF */
+#ifdef WITH_CONTIKI
 #include "memb.h"
 MEMB(peer_storage, dtls_peer_t, DTLS_PEER_MAX);
 
 void
-peer_init(void) {
+peer_init() {
   memb_init(&peer_storage);
 }
 
 static inline dtls_peer_t *
-dtls_malloc_peer(void) {
+dtls_malloc_peer() {
   return memb_alloc(&peer_storage);
 }
 
@@ -58,7 +66,29 @@ dtls_free_peer(dtls_peer_t *peer) {
   dtls_security_free(peer->security_params[1]);
   memb_free(&peer_storage, peer);
 }
-#endif /* WITH_CONTIKI */
+#else /* WITH_CONTIKI */
+#include "util/oc_memb.h"
+OC_MEMB(peer_storage, dtls_peer_t, DTLS_PEER_MAX);
+
+void
+peer_init() {
+  oc_memb_init(&peer_storage);
+}
+
+static inline dtls_peer_t *
+dtls_malloc_peer() {
+  return oc_memb_alloc(&peer_storage);
+}
+
+void
+dtls_free_peer(dtls_peer_t *peer) {
+  dtls_handshake_free(peer->handshake_params);
+  dtls_security_free(peer->security_params[0]);
+  dtls_security_free(peer->security_params[1]);
+  oc_memb_free(&peer_storage, peer);
+}
+#endif /* WITH_OCF */
+#endif /* WITH_CONTIKI || WITH_OCF */
 
 dtls_peer_t *
 dtls_new_peer(const session_t *session) {
@@ -75,7 +105,7 @@ dtls_new_peer(const session_t *session) {
       return NULL;
     }
 
-    dtls_dsrv_log_addr(DTLS_LOG_DEBUG, "dtls_new_peer", session);
+    dtls_dsrv_log_addr(DTLS_LOG_DEBUG, "dtls_new_peer", (const session_t *)session);
   }
 
   return peer;
