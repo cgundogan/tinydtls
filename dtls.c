@@ -3918,13 +3918,13 @@ dtls_context_t *
 dtls_new_context(void *app_data) {
   dtls_context_t *c;
   dtls_tick_t now;
-#ifndef WITH_CONTIKI
+#if !(defined(WITH_CONTIKI)) && !(defined(RIOT_VERSION))
   FILE *urandom = fopen("/dev/urandom", "r");
   unsigned char buf[sizeof(unsigned long)];
 #endif /* WITH_CONTIKI */
 
   dtls_ticks(&now);
-#ifdef WITH_CONTIKI
+#if (defined(WITH_CONTIKI) || defined(RIOT_VERSION))
   /* FIXME: need something better to init PRNG here */
   dtls_prng_init(now);
 #else /* WITH_CONTIKI */
