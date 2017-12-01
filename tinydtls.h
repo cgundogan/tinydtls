@@ -36,4 +36,8 @@
 #  include "platform-specific/platform.h"
 #endif /* !CONTIKI && !RIOT_VERSION */
 
+#if !defined(DTLS_ECC) && !defined(DTLS_PSK)
+#error "TinyDTLS requires at least one Cipher suite!"
+#endif
+
 #endif /* _DTLS_TINYDTLS_H_ */
