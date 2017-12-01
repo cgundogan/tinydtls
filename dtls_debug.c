@@ -6,7 +6,7 @@
  * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
  *
  * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v10.html
- * and the Eclipse Distribution License is available at 
+ * and the Eclipse Distribution License is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * Contributors:
@@ -65,7 +65,7 @@ dtls_set_log_level(log_t level) {
 
 /* this array has the same order as the type log_t */
 static char *loglevels[] = {
-  "EMRG", "ALRT", "CRIT", "WARN", "NOTE", "INFO", "DEBG" 
+  "EMRG", "ALRT", "CRIT", "WARN", "NOTE", "INFO", "DEBG"
 };
 
 #ifdef HAVE_TIME_H
@@ -194,7 +194,12 @@ dsrv_print_addr(const session_t *addr, char *buf, size_t len) {
   p += sprintf(p, ":%d", uip_htons(addr->port));
 
   return p - buf;
-# else /* WITH_CONTIKI */
+# elif defined(RIOT_VERSION) /* WITH_CONTIKI */
+  /* FIXME: Switch to RIOT own DEBUG lines */
+  (void) addr;
+  (void) buf;
+  (void) len;
+# else
   /* TODO: output addresses manually */
 #   warning "inet_ntop() not available, network addresses will not be included in debug output"
 # endif /* WITH_CONTIKI */
