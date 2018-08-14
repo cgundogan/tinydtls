@@ -286,6 +286,7 @@ dtls_add_peer(dtls_context_t *ctx, dtls_peer_t *peer) {
   return 0;
 }
 
+extern uint32_t start_data;
 int
 dtls_write(struct dtls_context_t *ctx,
 	   session_t *dst, uint8 *buf, size_t len) {
@@ -306,6 +307,7 @@ dtls_write(struct dtls_context_t *ctx,
     if (peer->state != DTLS_STATE_CONNECTED) {
       return 0;
     } else {
+      start_data = xtimer_now_usec();
       return dtls_send(ctx, peer, DTLS_CT_APPLICATION_DATA, buf, len);
     }
   }
@@ -1537,6 +1539,7 @@ dtls_send_handshake_msg(dtls_context_t *ctx,
  * @return Less than zero in case of an error or the number of
  *   bytes that have been sent otherwise.
  */
+extern uint32_t stop_data;
 static int
 dtls_send_multi(dtls_context_t *ctx, dtls_peer_t *peer,
 		dtls_security_parameters_t *security , session_t *session,
@@ -1574,6 +1577,8 @@ dtls_send_multi(dtls_context_t *ctx, dtls_peer_t *peer,
       dtls_int_to_uint16(sendbuf + 1, DTLS10_VERSION);
     }
   }
+
+  stop_data = xtimer_now_usec();
 
   dtls_debug_hexdump("send header", sendbuf, sizeof(dtls_record_header_t));
   for (i = 0; i < buf_array_len; i++) {
@@ -3762,6 +3767,7 @@ static int dtls_alert_send_from_err(dtls_context_t *ctx, dtls_peer_t *peer,
 /**
  * Handles incoming data as DTLS message from given peer.
  */
+extern uint32_t verify_start;
 int
 dtls_handle_message(dtls_context_t *ctx,
 		    session_t *session,
@@ -3796,6 +3802,9 @@ dtls_handle_message(dtls_context_t *ctx,
         dtls_alert("No security context for epoch: %i\n", dtls_get_epoch(header));
         data_length = -1;
       } else {
+
+        verify_start = xtimer_now_usec();
+
         uint64_t pkt_seq_nr = dtls_uint48_to_int(header->sequence_number);
         if(pkt_seq_nr == 0 && security->cseq.cseq == 0) {
           data_length = decrypt_verify(peer, msg, rlen, &data);
